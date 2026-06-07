@@ -4,7 +4,9 @@ import '../models/holding.dart';
 import 'login_screen.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onRegisterTap;
+
+  const HomeScreen({super.key, this.onRegisterTap});
 
   static const List<Holding> _holdings = [
     Holding(name: '삼성전자', code: '005930', shares: 20, changePercent: 3.1),
@@ -31,10 +33,12 @@ class HomeScreen extends StatelessWidget {
               const SizedBox(height: 28),
               _buildSectionTitle('보유 종목'),
               const SizedBox(height: 12),
-              ..._holdings.map((h) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _buildHoldingCard(h),
-                  )),
+              ..._holdings.map(
+                (h) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _buildHoldingCard(h),
+                ),
+              ),
               const SizedBox(height: 20),
               _buildRegisterButton(),
             ],
@@ -97,9 +101,7 @@ class HomeScreen extends StatelessWidget {
           decoration: BoxDecoration(
             color: GamJabiApp.softBlue,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: GamJabiApp.primaryBlue.withOpacity(0.15),
-            ),
+            border: Border.all(color: GamJabiApp.primaryBlue.withOpacity(0.15)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -128,15 +130,9 @@ class HomeScreen extends StatelessWidget {
   Widget _buildSummaryCards() {
     return Row(
       children: [
-        Expanded(
-          flex: 3,
-          child: _buildTotalAssetCard(),
-        ),
+        Expanded(flex: 3, child: _buildTotalAssetCard()),
         const SizedBox(width: 12),
-        Expanded(
-          flex: 2,
-          child: _buildHoldingCountCard(),
-        ),
+        Expanded(flex: 2, child: _buildHoldingCountCard()),
       ],
     );
   }
@@ -386,14 +382,11 @@ class HomeScreen extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
-        onPressed: () {},
+        onPressed: onRegisterTap,
         icon: const Icon(Icons.add_rounded, size: 20),
         label: const Text(
           '자산 등록하기',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: GamJabiApp.primaryBlue,
