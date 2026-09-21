@@ -1,6 +1,21 @@
 import 'package:flutter/material.dart';
-import '../main.dart';
+import 'package:flutter/services.dart';
 
+import '../core/api_exception.dart';
+import '../core/format.dart';
+import '../main.dart';
+import '../models/watchlist_item.dart';
+import '../state/app_scope.dart';
+import '../state/app_state.dart';
+import '../widgets/async_view.dart';
+import '../widgets/cold_start_banner.dart';
+import '../widgets/skeleton_box.dart';
+
+/// Registers holdings against `/members/{userKey}/watchlist`.
+///
+/// The form mirrors the server exactly — ticker, quantity, average buy price —
+/// because those are the only three fields the API stores. The original
+/// 종목명 / 자산 구분 / 관리 기준 / 메모 inputs had nowhere to go.
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
 
@@ -10,103 +25,272 @@ class RegistrationScreen extends StatefulWidget {
 
 class _RegistrationScreenState extends State<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _codeController = TextEditingController();
+  final _tickerController = TextEditingController();
   final _sharesController = TextEditingController();
   final _priceController = TextEditingController();
-  final _memoController = TextEditingController();
 
-  String _assetType = '국내주식';
-  String _strategy = '추천 종목';
+  bool _submitting = false;
+  bool _requested = false;
 
-  final List<_PortfolioAsset> _assets = [
-    const _PortfolioAsset(
-      type: '국내주식',
-      name: '삼성전자',
-      code: '005930',
-      shares: 20,
-      averagePrice: 72000,
-      strategy: '장기 보유',
-      memo: '반도체 회복 구간 확인',
-    ),
-    const _PortfolioAsset(
-      type: '미국주식',
-      name: 'NVIDIA',
-      code: 'NVDA',
-      shares: 4,
-      averagePrice: 920,
-      strategy: '추천 종목',
-      memo: 'AI 수요 모멘텀',
-    ),
-  ];
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_requested) return;
+    _requested = true;
+    // refreshWatchlist() notifies synchronously, but didChangeDependencies runs
+    // during build, where marking an ancestor dirty is illegal.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) AppScope.read(context).refreshWatchlist();
+    });
+  }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _codeController.dispose();
+    _tickerController.dispose();
     _sharesController.dispose();
     _priceController.dispose();
-    _memoController.dispose();
     super.dispose();
   }
 
-  void _registerAsset() {
+  Future<void> _submit() async {
+    if (_submitting) return;
     if (!_formKey.currentState!.validate()) return;
 
-    final asset = _PortfolioAsset(
-      type: _assetType,
-      name: _nameController.text.trim(),
-      code: _codeController.text.trim().toUpperCase(),
-      shares: int.parse(_sharesController.text.trim()),
-      averagePrice: int.parse(_priceController.text.trim()),
-      strategy: _strategy,
-      memo: _memoController.text.trim(),
-    );
+    final state = AppScope.read(context);
+    final ticker = _tickerController.text.trim().toUpperCase();
 
-    setState(() {
-      _assets.insert(0, asset);
-      _nameController.clear();
-      _codeController.clear();
+    setState(() => _submitting = true);
+    try {
+      await state.addHolding(
+        ticker: ticker,
+        quantity: double.parse(_sharesController.text.trim()),
+        avgBuyPrice: double.parse(_priceController.text.trim()),
+      );
+      if (!mounted) return;
+      _tickerController.clear();
       _sharesController.clear();
       _priceController.clear();
-      _memoController.clear();
-    });
+      _formKey.currentState!.reset();
+      _snack(
+        state.lastAddWasUpdate
+            ? '$ticker은(는) 이미 등록돼 있어 수량·평단가를 갱신했어요.'
+            : '$ticker을(를) 포트폴리오에 등록했습니다.',
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      _snack(e.userMessage, error: true);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
+  Future<void> _delete(WatchlistItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('종목 삭제'),
+        content: Text('${item.ticker}을(를) 포트폴리오에서 삭제할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFE53935),
+            ),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final state = AppScope.read(context);
+    try {
+      await state.removeHolding(item.ticker);
+      if (mounted) _snack('${item.ticker}을(를) 삭제했어요.');
+    } on ApiException catch (e) {
+      if (mounted) _snack(e.userMessage, error: true);
+    }
+  }
+
+  Future<void> _edit(WatchlistItem item) async {
+    final sharesController = TextEditingController(
+      text: formatShares(item.quantity),
+    );
+    final priceController = TextEditingController(
+      text: item.avgBuyPrice.toStringAsFixed(2),
+    );
+    final formKey = GlobalKey<FormState>();
+
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${item.ticker} 수정',
+                style: const TextStyle(
+                  color: GamJabiApp.textDark,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _NumberField(
+                      controller: sharesController,
+                      label: '보유 수량',
+                      hint: '4',
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _NumberField(
+                      controller: priceController,
+                      label: '평균 단가 (USD)',
+                      hint: '219.34',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (formKey.currentState!.validate()) {
+                      Navigator.of(ctx).pop(true);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: GamJabiApp.primaryBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    '저장',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final quantity = double.tryParse(sharesController.text.trim());
+    final price = double.tryParse(priceController.text.trim());
+    sharesController.dispose();
+    priceController.dispose();
+
+    if (saved != true || !mounted || quantity == null || price == null) return;
+
+    final state = AppScope.read(context);
+    try {
+      await state.updateHolding(
+        item.ticker,
+        quantity: quantity,
+        avgBuyPrice: price,
+      );
+      if (mounted) _snack('${item.ticker} 정보를 수정했어요.');
+    } on ApiException catch (e) {
+      if (mounted) _snack(e.userMessage, error: true);
+    }
+  }
+
+  void _snack(String message, {bool error = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('${asset.name}을(를) 포트폴리오에 등록했습니다.'),
+        content: Text(message),
         behavior: SnackBarBehavior.floating,
+        backgroundColor: error ? const Color(0xFFE53935) : null,
       ),
     );
   }
 
-  int get _totalValue => _assets.fold(0, (sum, asset) => sum + asset.value);
-
   @override
   Widget build(BuildContext context) {
+    final state = AppScope.of(context);
+
     return Scaffold(
       backgroundColor: GamJabiApp.backgroundWhite,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(),
-              const SizedBox(height: 18),
-              _buildSummary(),
-              const SizedBox(height: 18),
-              _buildFormCard(),
-              const SizedBox(height: 22),
-              _buildPortfolioHeader(),
-              const SizedBox(height: 12),
-              ..._assets.map(
-                (asset) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _buildAssetCard(asset),
+        child: RefreshIndicator(
+          color: GamJabiApp.primaryBlue,
+          onRefresh: () => state.refreshWatchlist(force: true),
+          child: SingleChildScrollView(
+            // Every tab stays mounted in the IndexedStack; without this they all
+            // attach to the PrimaryScrollController and scroll actions break.
+            primary: false,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(),
+                const SizedBox(height: 14),
+                const ColdStartBanner(margin: EdgeInsets.only(bottom: 12)),
+                _buildSummary(state),
+                const SizedBox(height: 18),
+                _buildFormCard(),
+                const SizedBox(height: 22),
+                _buildPortfolioHeader(),
+                const SizedBox(height: 12),
+                AsyncView<List<WatchlistItem>>(
+                  value: state.watchlist,
+                  loading: Column(
+                    children: List.generate(
+                      2,
+                      (_) => const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: SkeletonBox(height: 84, radius: 16),
+                      ),
+                    ),
+                  ),
+                  isEmpty: (items) => items.isEmpty,
+                  emptyIcon: Icons.add_chart_rounded,
+                  emptyTitle: '등록된 종목이 없어요',
+                  emptyDescription: '위 양식에서 티커·수량·평단가를 입력해\n첫 종목을 추가해보세요.',
+                  onRetry: () => state.refreshWatchlist(force: true),
+                  builder: (context, items) => Column(
+                    children: items
+                        .map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _buildAssetCard(item),
+                          ),
+                        )
+                        .toList(),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -144,7 +328,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
               ),
               SizedBox(height: 4),
               Text(
-                '보유 자산을 추가하고 포트폴리오 기준을 관리하세요',
+                '보유한 미국 주식을 추가하면 홈에서 함께 관리돼요',
                 style: TextStyle(
                   color: GamJabiApp.textMuted,
                   fontSize: 13,
@@ -158,22 +342,22 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     );
   }
 
-  Widget _buildSummary() {
+  Widget _buildSummary(AppState state) {
     return Row(
       children: [
         Expanded(
           child: _buildMetricCard(
             icon: Icons.account_balance_wallet_rounded,
-            label: '평가 기준 금액',
-            value: '${_formatCurrency(_totalValue)}원',
+            label: '총 매입금액',
+            value: formatUsd(state.totalCost),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: _buildMetricCard(
             icon: Icons.pie_chart_rounded,
-            label: '등록 자산',
-            value: '${_assets.length}개',
+            label: '등록 종목',
+            value: '${state.holdingCount}개',
           ),
         ),
       ],
@@ -247,83 +431,87 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 16),
-            _buildChoiceChips(
-              label: '자산 구분',
-              values: const ['국내주식', '미국주식', 'ETF'],
-              selected: _assetType,
-              onChanged: (value) => setState(() => _assetType = value),
+            const SizedBox(height: 6),
+            const Text(
+              'AI 분석은 미국 주식만 지원해요 (예: NVDA, AAPL, MSFT)',
+              style: TextStyle(
+                color: GamJabiApp.textMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildTextField(
-                    controller: _nameController,
-                    label: '종목명',
-                    hint: '예: 삼성전자',
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildTextField(
-                    controller: _codeController,
-                    label: '종목코드',
-                    hint: '005930',
-                  ),
-                ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _tickerController,
+              textCapitalization: TextCapitalization.characters,
+              inputFormatters: [
+                UpperCaseFormatter(),
+                LengthLimitingTextInputFormatter(7),
               ],
+              style: const TextStyle(
+                color: GamJabiApp.textDark,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+              decoration: _fieldDecoration(label: '티커', hint: 'NVDA'),
+              validator: (value) {
+                final text = (value ?? '').trim().toUpperCase();
+                if (text.isEmpty) return '티커를 입력하세요';
+                if (!RegExp(r'^[A-Z][A-Z.\-]{0,6}$').hasMatch(text)) {
+                  return '영문 티커를 입력하세요 (예: NVDA)';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: _buildTextField(
+                  child: _NumberField(
                     controller: _sharesController,
                     label: '보유 수량',
-                    hint: '10',
-                    keyboardType: TextInputType.number,
+                    hint: '4',
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: _buildTextField(
+                  child: _NumberField(
                     controller: _priceController,
-                    label: '평균 단가',
-                    hint: '72000',
-                    keyboardType: TextInputType.number,
+                    label: '평균 단가 (USD)',
+                    hint: '219.34',
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 14),
-            _buildChoiceChips(
-              label: '관리 기준',
-              values: const ['추천 종목', '장기 보유', '관심 관찰'],
-              selected: _strategy,
-              onChanged: (value) => setState(() => _strategy = value),
-            ),
-            const SizedBox(height: 14),
-            _buildTextField(
-              controller: _memoController,
-              label: '메모',
-              hint: '진입 근거 또는 리스크 메모',
-              requiredField: false,
-              maxLines: 2,
             ),
             const SizedBox(height: 18),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _registerAsset,
-                icon: const Icon(Icons.add_rounded, size: 20),
-                label: const Text(
-                  '포트폴리오에 등록',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                onPressed: _submitting ? null : _submit,
+                icon: _submitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.add_rounded, size: 20),
+                label: Text(
+                  _submitting ? '등록 중…' : '포트폴리오에 등록',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: GamJabiApp.primaryBlue,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: GamJabiApp.primaryBlue.withValues(
+                    alpha: 0.5,
+                  ),
+                  disabledForegroundColor: Colors.white70,
                   padding: const EdgeInsets.symmetric(vertical: 15),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
@@ -335,118 +523,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildChoiceChips({
-    required String label,
-    required List<String> values,
-    required String selected,
-    required ValueChanged<String> onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: GamJabiApp.textDark,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: values.map((value) {
-            final isSelected = selected == value;
-            return ChoiceChip(
-              label: Text(value),
-              selected: isSelected,
-              onSelected: (_) => onChanged(value),
-              showCheckmark: false,
-              selectedColor: GamJabiApp.softBlue,
-              backgroundColor: const Color(0xFFF4F6FB),
-              labelStyle: TextStyle(
-                color: isSelected
-                    ? GamJabiApp.primaryBlue
-                    : GamJabiApp.textMuted,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-              ),
-              side: BorderSide(
-                color: isSelected
-                    ? GamJabiApp.primaryBlue.withValues(alpha: 0.25)
-                    : const Color(0xFFE4E9F2),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    bool requiredField = true,
-    int maxLines = 1,
-    TextInputType? keyboardType,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      maxLines: maxLines,
-      style: const TextStyle(
-        color: GamJabiApp.textDark,
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-      ),
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        labelStyle: const TextStyle(
-          color: GamJabiApp.textMuted,
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
-        hintStyle: const TextStyle(color: GamJabiApp.textMuted, fontSize: 13),
-        filled: true,
-        fillColor: const Color(0xFFF7F8FC),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(13),
-          borderSide: const BorderSide(color: Color(0xFFE4E9F2)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(13),
-          borderSide: const BorderSide(color: Color(0xFFE4E9F2)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(13),
-          borderSide: const BorderSide(
-            color: GamJabiApp.primaryBlue,
-            width: 1.4,
-          ),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 13,
-        ),
-      ),
-      validator: (value) {
-        final text = value?.trim() ?? '';
-        if (requiredField && text.isEmpty) return '$label을(를) 입력하세요';
-        if (keyboardType == TextInputType.number && text.isNotEmpty) {
-          final number = int.tryParse(text);
-          if (number == null || number <= 0) return '양수로 입력하세요';
-        }
-        return null;
-      },
     );
   }
 
@@ -464,7 +540,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           ),
         ),
         Text(
-          '등록순',
+          '최근 등록순',
           style: TextStyle(
             color: GamJabiApp.textMuted,
             fontSize: 12,
@@ -475,9 +551,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     );
   }
 
-  Widget _buildAssetCard(_PortfolioAsset asset) {
+  Widget _buildAssetCard(WatchlistItem item) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -494,7 +570,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
             ),
             alignment: Alignment.center,
             child: Text(
-              asset.initial,
+              item.initial,
               style: const TextStyle(
                 color: GamJabiApp.primaryBlue,
                 fontSize: 16,
@@ -511,7 +587,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        asset.name,
+                        item.ticker,
                         style: const TextStyle(
                           color: GamJabiApp.textDark,
                           fontSize: 15,
@@ -520,7 +596,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       ),
                     ),
                     Text(
-                      '${_formatCurrency(asset.value)}원',
+                      formatUsd(item.cost),
                       style: const TextStyle(
                         color: GamJabiApp.textDark,
                         fontSize: 14,
@@ -531,80 +607,121 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  '${asset.type} · ${asset.code} · ${asset.shares}주 · 평균 ${_formatCurrency(asset.averagePrice)}원',
+                  '${formatShares(item.quantity)}주 · 평균 '
+                  '${formatUsd(item.avgBuyPrice)}',
                   style: const TextStyle(
                     color: GamJabiApp.textMuted,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    _buildTag(asset.strategy, GamJabiApp.primaryBlue),
-                    if (asset.memo.isNotEmpty)
-                      _buildTag(asset.memo, const Color(0xFF22A06B)),
-                  ],
-                ),
               ],
             ),
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(
+              Icons.more_vert_rounded,
+              color: GamJabiApp.textMuted,
+              size: 20,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            onSelected: (value) {
+              if (value == 'edit') _edit(item);
+              if (value == 'delete') _delete(item);
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'edit', child: Text('수정')),
+              PopupMenuItem(
+                value: 'delete',
+                child: Text('삭제', style: TextStyle(color: Color(0xFFE53935))),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildTag(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
+InputDecoration _fieldDecoration({
+  required String label,
+  required String hint,
+}) {
+  return InputDecoration(
+    labelText: label,
+    hintText: hint,
+    labelStyle: const TextStyle(
+      color: GamJabiApp.textMuted,
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+    ),
+    hintStyle: const TextStyle(color: GamJabiApp.textMuted, fontSize: 13),
+    filled: true,
+    fillColor: const Color(0xFFF7F8FC),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: Color(0xFFE4E9F2)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: Color(0xFFE4E9F2)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: GamJabiApp.primaryBlue, width: 1.4),
+    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+  );
+}
+
+/// Decimal-accepting number field.
+///
+/// The API types quantity and avg_buy_price as `number`, so the old
+/// `int.tryParse` validator wrongly rejected prices like `219.34`.
+class _NumberField extends StatelessWidget {
+  const _NumberField({
+    required this.controller,
+    required this.label,
+    required this.hint,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+      style: const TextStyle(
+        color: GamJabiApp.textDark,
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
       ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
+      decoration: _fieldDecoration(label: label, hint: hint),
+      validator: (value) {
+        final text = (value ?? '').trim();
+        if (text.isEmpty) return '$label을(를) 입력하세요';
+        final number = double.tryParse(text);
+        if (number == null || number <= 0) return '0보다 큰 숫자를 입력하세요';
+        return null;
+      },
     );
-  }
-
-  String _formatCurrency(int value) {
-    final text = value.toString();
-    final buffer = StringBuffer();
-    for (var i = 0; i < text.length; i++) {
-      final reverseIndex = text.length - i;
-      buffer.write(text[i]);
-      if (reverseIndex > 1 && reverseIndex % 3 == 1) buffer.write(',');
-    }
-    return buffer.toString();
   }
 }
 
-class _PortfolioAsset {
-  final String type;
-  final String name;
-  final String code;
-  final int shares;
-  final int averagePrice;
-  final String strategy;
-  final String memo;
-
-  const _PortfolioAsset({
-    required this.type,
-    required this.name,
-    required this.code,
-    required this.shares,
-    required this.averagePrice,
-    required this.strategy,
-    required this.memo,
-  });
-
-  int get value => shares * averagePrice;
-  String get initial => name.isEmpty ? '?' : name.characters.first;
+/// Keeps the ticker field uppercase as the user types.
+class UpperCaseFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) => TextEditingValue(
+    text: newValue.text.toUpperCase(),
+    selection: newValue.selection,
+  );
 }
