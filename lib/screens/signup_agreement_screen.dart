@@ -8,11 +8,7 @@ class _TermItem {
   final bool required;
   bool agreed;
 
-  _TermItem({
-    required this.title,
-    required this.required,
-    this.agreed = false,
-  });
+  _TermItem({required this.title, required this.required, this.agreed = false});
 }
 
 class SignupAgreementScreen extends StatefulWidget {
@@ -32,7 +28,8 @@ class _SignupAgreementScreenState extends State<SignupAgreementScreen> {
   ];
 
   bool get _allAgreed => _terms.every((t) => t.agreed);
-  bool get _canProceed => _terms.where((t) => t.required).every((t) => t.agreed);
+  bool get _canProceed =>
+      _terms.where((t) => t.required).every((t) => t.agreed);
 
   void _toggleAll(bool value) {
     setState(() {
@@ -68,8 +65,8 @@ class _SignupAgreementScreenState extends State<SignupAgreementScreen> {
                     _buildAllAgreeCard(),
                     const SizedBox(height: 12),
                     ..._terms.asMap().entries.map(
-                          (e) => _buildTermRow(e.key, e.value),
-                        ),
+                      (e) => _buildTermRow(e.key, e.value),
+                    ),
                     const SizedBox(height: 20),
                     _buildInfoNotice(),
                   ],
@@ -145,7 +142,7 @@ class _SignupAgreementScreenState extends State<SignupAgreementScreen> {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: _allAgreed
-                ? GamJabiApp.primaryBlue.withOpacity(0.3)
+                ? GamJabiApp.primaryBlue.withValues(alpha: 0.3)
                 : const Color(0xFFE4E9F2),
             width: _allAgreed ? 1.5 : 1,
           ),
@@ -244,8 +241,7 @@ class _SignupAgreementScreenState extends State<SignupAgreementScreen> {
         borderRadius: BorderRadius.circular(big ? 8 : 7),
       ),
       child: checked
-          ? Icon(Icons.check_rounded,
-              size: big ? 16 : 15, color: Colors.white)
+          ? Icon(Icons.check_rounded, size: big ? 16 : 15, color: Colors.white)
           : null,
     );
   }
@@ -271,7 +267,7 @@ class _SignupAgreementScreenState extends State<SignupAgreementScreen> {
               'GamJabi는 투자정보를 참고용으로 제공하며, '
               '최종 투자 결정은 사용자 본인의 판단과 책임에 따릅니다.',
               style: TextStyle(
-                color: GamJabiApp.primaryBlue.withOpacity(0.9),
+                color: GamJabiApp.primaryBlue.withValues(alpha: 0.9),
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
                 height: 1.5,
@@ -297,9 +293,7 @@ class _SignupAgreementScreenState extends State<SignupAgreementScreen> {
           onPressed: _canProceed
               ? () {
                   Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const SignupInfoScreen(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const SignupInfoScreen()),
                   );
                 }
               : null,

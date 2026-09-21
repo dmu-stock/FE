@@ -100,7 +100,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       hint: '비밀번호를 다시 입력해주세요',
                       obscure: _obscurePwConfirm,
                       onToggle: () => setState(
-                          () => _obscurePwConfirm = !_obscurePwConfirm),
+                        () => _obscurePwConfirm = !_obscurePwConfirm,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     _buildPasswordHint(),
@@ -170,16 +171,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       child: TextField(
         controller: controller,
         obscureText: obscure,
-        style: const TextStyle(
-          color: GamJabiApp.textDark,
-          fontSize: 15,
-        ),
+        style: const TextStyle(color: GamJabiApp.textDark, fontSize: 15),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: TextStyle(
-            color: GamJabiApp.textMuted,
-            fontSize: 14,
-          ),
+          hintStyle: TextStyle(color: GamJabiApp.textMuted, fontSize: 14),
           prefixIcon: const Icon(
             Icons.lock_outline_rounded,
             color: GamJabiApp.textMuted,
@@ -205,7 +200,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   Widget _buildPasswordHint() {
     final lengthOk = _pwController.text.length >= 8;
     final specialOk = _specialRegex.hasMatch(_pwController.text);
-    final matchOk = _pwController.text.isNotEmpty &&
+    final matchOk =
+        _pwController.text.isNotEmpty &&
         _pwController.text == _pwConfirmController.text;
 
     return Container(
@@ -288,9 +284,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   Widget _buildSuccessDialog() {
     return Dialog(
       backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
         child: Column(
@@ -308,7 +302,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: GamJabiApp.primaryBlue.withOpacity(0.3),
+                    color: GamJabiApp.primaryBlue.withValues(alpha: 0.3),
                     blurRadius: 16,
                     offset: const Offset(0, 6),
                   ),
@@ -344,9 +338,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  Navigator.of(context).popUntil(
-                    (route) => route.settings.name == '/login',
-                  );
+                  Navigator.of(
+                    context,
+                  ).popUntil((route) => route.settings.name == '/login');
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: GamJabiApp.primaryBlue,
@@ -358,10 +352,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 ),
                 child: const Text(
                   '로그인하러 가기',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
                 ),
               ),
             ),
@@ -370,5 +361,4 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       ),
     );
   }
-
 }

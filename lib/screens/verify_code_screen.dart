@@ -21,8 +21,10 @@ class VerifyCodeScreen extends StatefulWidget {
 }
 
 class _VerifyCodeScreenState extends State<VerifyCodeScreen> {
-  final List<TextEditingController> _controllers =
-      List.generate(6, (_) => TextEditingController());
+  final List<TextEditingController> _controllers = List.generate(
+    6,
+    (_) => TextEditingController(),
+  );
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
 
   Timer? _timer;
@@ -86,11 +88,9 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen> {
       setState(() => _errorText = '6자리 코드를 모두 입력해주세요');
       return;
     }
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const ResetPasswordScreen(),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ResetPasswordScreen()));
   }
 
   void _resend() {
@@ -104,9 +104,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen> {
         content: const Text('인증 코드가 재전송되었어요'),
         backgroundColor: GamJabiApp.primaryBlue,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
         duration: const Duration(seconds: 2),
       ),
@@ -241,7 +239,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen> {
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(
                   color: filled
-                      ? GamJabiApp.primaryBlue.withOpacity(0.4)
+                      ? GamJabiApp.primaryBlue.withValues(alpha: 0.4)
                       : const Color(0xFFE4E9F2),
                 ),
               ),
@@ -276,9 +274,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen> {
             Text(
               expired ? '시간 만료' : '남은 시간 ${_formatTime(_secondsRemaining)}',
               style: TextStyle(
-                color: expired
-                    ? const Color(0xFFE53935)
-                    : GamJabiApp.textMuted,
+                color: expired ? const Color(0xFFE53935) : GamJabiApp.textMuted,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),
