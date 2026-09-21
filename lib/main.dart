@@ -1,8 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'screens/main_scaffold.dart';
+import 'state/app_scope.dart';
+import 'state/app_state.dart';
 
 void main() {
-  runApp(const GamJabiApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  final state = AppState();
+  runApp(AppScope(state: state, child: const GamJabiApp()));
+  // Wake the Render dyno now so the first real request doesn't pay the
+  // 30–60s cold start.
+  unawaited(state.bootstrap());
 }
 
 class GamJabiApp extends StatelessWidget {
