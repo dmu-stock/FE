@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import '../core/api_exception.dart';
 import '../main.dart';
 import '../models/chat_message.dart';
+import '../services/chat_service.dart';
+import '../state/app_scope.dart';
+import '../widgets/cold_start_banner.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
 
@@ -19,7 +23,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<ChatMessage> _messages = [
     ChatMessage(
       sender: Sender.bot,
-      text: '안녕하세요! 감자비(GamJabi)입니다 🥔\n'
+      text:
+          '안녕하세요! 감자비(GamJabi)입니다 🥔\n'
           '관심있는 종목이나 시장 분석이 필요하신가요?\n'
           '무엇이든 편하게 물어보세요!',
     ),
@@ -27,12 +32,38 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _isTyping = false;
 
-  final List<String> _suggestions = [
-    '삼성전자 전망 어때?',
-    '오늘 시장 요약해줘',
-    '코스피 분석',
-    '관심종목 추천',
-  ];
+  /// Prompts built from what the user actually holds, falling back to the
+  /// blue chips the backend covers when the watchlist is empty.
+  List<String> get _suggestions {
+    final holdings = AppScope.of(context).holdings;
+    if (holdings.isEmpty) {
+      return const [
+        'NVDA 전망 어때?',
+        '오늘 미국 시장 요약해줘',
+        '테슬라 최근 뉴스 정리해줘',
+        '애플 지금 사도 될까?',
+      ];
+    }
+    final tickers = holdings.take(3).map((h) => h.ticker).toList();
+    return [
+      '${tickers.first} 전망 어때?',
+      '오늘 미국 시장 요약해줘',
+      if (tickers.length > 1) '${tickers[1]} 최근 뉴스 정리해줘',
+      '내 보유 종목 ${tickers.join(', ')} 중에 뭐가 제일 괜찮아?',
+    ];
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Another screen may have queued a question (e.g. 챗봇에 묻기 on the
+    // analysis sheet). Send it once the tab is actually showing.
+    final queued = AppScope.of(context).takePendingChatMessage();
+    if (queued == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _sendMessage(queued);
+    });
+  }
 
   @override
   void dispose() {
@@ -55,29 +86,38 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _sendMessage(String text) async {
-    if (text.trim().isEmpty) return;
+    final trimmed = text.trim();
+    // Guard against a double tap while a reply is still in flight.
+    if (trimmed.isEmpty || _isTyping) return;
+
+    final state = AppScope.read(context);
 
     setState(() {
-      _messages.add(ChatMessage(sender: Sender.user, text: text.trim()));
+      _messages.add(ChatMessage(sender: Sender.user, text: trimmed));
       _isTyping = true;
     });
     _textController.clear();
     _scrollToBottom();
 
-    await Future.delayed(const Duration(milliseconds: 1200));
-
-    if (!mounted) return;
-    setState(() {
-      _isTyping = false;
-      _messages.add(
-        ChatMessage(
-          sender: Sender.bot,
-          text: '"${text.trim()}"에 대한 분석을 준비 중이에요.\n'
-              '곧 예측 모델과 연결될 예정입니다 📈',
-        ),
-      );
-    });
-    _scrollToBottom();
+    try {
+      final reply = await ChatService(
+        state.api,
+      ).send(message: trimmed, sessionId: state.chatSessionId);
+      if (!mounted) return;
+      setState(() {
+        _messages.add(ChatMessage(sender: Sender.bot, text: reply));
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          ChatMessage(sender: Sender.bot, text: e.userMessage, isError: true),
+        );
+      });
+    } finally {
+      if (mounted) setState(() => _isTyping = false);
+      _scrollToBottom();
+    }
   }
 
   @override
@@ -101,6 +141,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             if (_messages.length <= 1) _buildSuggestions(),
+            const ColdStartBanner(),
             _buildInputBar(),
           ],
         ),
@@ -131,7 +172,7 @@ class _ChatScreenState extends State<ChatScreen> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: GamJabiApp.primaryBlue.withOpacity(0.3),
+                  color: GamJabiApp.primaryBlue.withValues(alpha: 0.3),
                   blurRadius: 10,
                   offset: const Offset(0, 3),
                 ),
@@ -184,10 +225,17 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.refresh_rounded,
-              color: GamJabiApp.textDark, size: 22),
+          icon: const Icon(
+            Icons.refresh_rounded,
+            color: GamJabiApp.textDark,
+            size: 22,
+          ),
           onPressed: () {
+            // The server keeps conversation memory per session_id, so clearing
+            // only the local list would leave the bot still remembering.
+            AppScope.read(context).startNewChatSession();
             setState(() {
+              _isTyping = false;
               _messages.clear();
               _messages.add(
                 ChatMessage(
@@ -199,8 +247,11 @@ class _ChatScreenState extends State<ChatScreen> {
           },
         ),
         IconButton(
-          icon: const Icon(Icons.more_vert_rounded,
-              color: GamJabiApp.textDark, size: 22),
+          icon: const Icon(
+            Icons.more_vert_rounded,
+            color: GamJabiApp.textDark,
+            size: 22,
+          ),
           onPressed: () {},
         ),
         const SizedBox(width: 4),
@@ -234,12 +285,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 borderRadius: BorderRadius.circular(20),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: GamJabiApp.softBlue,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: GamJabiApp.primaryBlue.withOpacity(0.15),
+                      color: GamJabiApp.primaryBlue.withValues(alpha: 0.15),
                     ),
                   ),
                   child: Text(
@@ -264,9 +317,7 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Color(0xFFEEF1F7), width: 1),
-        ),
+        border: Border(top: BorderSide(color: Color(0xFFEEF1F7), width: 1)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -332,7 +383,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: GamJabiApp.primaryBlue.withOpacity(0.3),
+                    color: GamJabiApp.primaryBlue.withValues(alpha: 0.3),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
