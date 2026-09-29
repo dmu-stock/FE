@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../core/api_exception.dart';
 import '../main.dart';
 import '../models/chat_message.dart';
@@ -120,6 +121,39 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _startNewChat() {
+    // The server keeps conversation memory per session_id, so clearing
+    // only the local list would leave the bot still remembering.
+    AppScope.read(context).startNewChatSession();
+    setState(() {
+      _isTyping = false;
+      _messages.clear();
+      _messages.add(
+        ChatMessage(sender: Sender.bot, text: '새 대화를 시작합니다. 무엇을 도와드릴까요? 💬'),
+      );
+    });
+  }
+
+  /// True once the user has asked something, so there is more to copy than
+  /// the greeting.
+  bool get _hasConversation => _messages.any((m) => m.sender == Sender.user);
+
+  void _copyConversation() {
+    // Error bubbles are request failures, not part of the conversation.
+    final text = _messages
+        .where((m) => !m.isError)
+        .map((m) => '${m.sender == Sender.user ? '나' : 'GamJabi'}: ${m.text}')
+        .join('\n\n');
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('대화 내용을 복사했어요'),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -230,29 +264,29 @@ class _ChatScreenState extends State<ChatScreen> {
             color: GamJabiApp.textDark,
             size: 22,
           ),
-          onPressed: () {
-            // The server keeps conversation memory per session_id, so clearing
-            // only the local list would leave the bot still remembering.
-            AppScope.read(context).startNewChatSession();
-            setState(() {
-              _isTyping = false;
-              _messages.clear();
-              _messages.add(
-                ChatMessage(
-                  sender: Sender.bot,
-                  text: '새 대화를 시작합니다. 무엇을 도와드릴까요? 💬',
-                ),
-              );
-            });
-          },
+          onPressed: _startNewChat,
         ),
-        IconButton(
+        PopupMenuButton<String>(
           icon: const Icon(
             Icons.more_vert_rounded,
             color: GamJabiApp.textDark,
             size: 22,
           ),
-          onPressed: () {},
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          onSelected: (value) {
+            if (value == 'copy') _copyConversation();
+            if (value == 'new') _startNewChat();
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'copy',
+              enabled: _hasConversation,
+              child: const Text('대화 내용 복사'),
+            ),
+            const PopupMenuItem(value: 'new', child: Text('새 대화 시작')),
+          ],
         ),
         const SizedBox(width: 4),
       ],
