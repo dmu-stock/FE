@@ -21,6 +21,23 @@ class MessageBubble extends StatelessWidget {
     return '$h:$m';
   }
 
+  /// Copies the whole message, writing markdown links as `label (url)` so the
+  /// pasted text reads naturally.
+  void _copyMessage(BuildContext context) {
+    final text = message.text.replaceAllMapped(
+      _linkPattern,
+      (m) => '${m.group(1)} (${m.group(2)})',
+    );
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(
+        content: Text('메시지를 복사했어요'),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isUser = message.sender == Sender.user;
@@ -50,57 +67,60 @@ class MessageBubble extends StatelessWidget {
                   ? CrossAxisAlignment.end
                   : CrossAxisAlignment.start,
               children: [
-                Container(
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.72,
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: background,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(18),
-                      topRight: const Radius.circular(18),
-                      bottomLeft: Radius.circular(isUser ? 18 : 4),
-                      bottomRight: Radius.circular(isUser ? 4 : 18),
+                GestureDetector(
+                  onLongPress: () => _copyMessage(context),
+                  child: Container(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.72,
                     ),
-                    border: isUser ? null : Border.all(color: borderColor),
-                    boxShadow: [
-                      BoxShadow(
-                        color: isUser
-                            ? GamJabiApp.primaryBlue.withValues(alpha: 0.15)
-                            : Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: background,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(18),
+                        topRight: const Radius.circular(18),
+                        bottomLeft: Radius.circular(isUser ? 18 : 4),
+                        bottomRight: Radius.circular(isUser ? 4 : 18),
                       ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (isError) ...[
-                        const Padding(
-                          padding: EdgeInsets.only(top: 2, right: 8),
-                          child: Icon(
-                            Icons.error_outline_rounded,
-                            size: 16,
-                            color: Color(0xFFE53935),
+                      border: isUser ? null : Border.all(color: borderColor),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isUser
+                              ? GamJabiApp.primaryBlue.withValues(alpha: 0.15)
+                              : Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (isError) ...[
+                          const Padding(
+                            padding: EdgeInsets.only(top: 2, right: 8),
+                            child: Icon(
+                              Icons.error_outline_rounded,
+                              size: 16,
+                              color: Color(0xFFE53935),
+                            ),
+                          ),
+                        ],
+                        Flexible(
+                          child: _MessageText(
+                            text: message.text,
+                            color: textColor,
+                            linkColor: isUser
+                                ? Colors.white
+                                : GamJabiApp.primaryBlue,
                           ),
                         ),
                       ],
-                      Flexible(
-                        child: _MessageText(
-                          text: message.text,
-                          color: textColor,
-                          linkColor: isUser
-                              ? Colors.white
-                              : GamJabiApp.primaryBlue,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 4),
