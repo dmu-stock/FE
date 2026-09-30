@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import '../core/api_exception.dart';
 import '../main.dart';
 import '../models/chat_message.dart';
+import '../models/watchlist_item.dart';
 import '../services/chat_service.dart';
 import '../state/app_scope.dart';
+import '../widgets/async_view.dart';
 import '../widgets/cold_start_banner.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
@@ -152,6 +154,38 @@ class _ChatScreenState extends State<ChatScreen> {
         duration: Duration(seconds: 2),
       ),
     );
+  }
+
+  /// Opens the holdings picker and drops the chosen ticker into the input.
+  Future<void> _pickHolding() async {
+    final ticker = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) => const _HoldingPicker(),
+    );
+    if (ticker == null || !mounted) return;
+    _insertTicker(ticker);
+  }
+
+  /// Inserts [ticker] at the cursor, or at the end if the field was never
+  /// focused, adding a space before it when needed and one after it.
+  void _insertTicker(String ticker) {
+    final value = _textController.value;
+    final text = value.text;
+    final selection = value.selection;
+    final start = selection.isValid ? selection.start : text.length;
+    final end = selection.isValid ? selection.end : text.length;
+    final before = text.substring(0, start);
+    final insert =
+        '${before.isEmpty || before.endsWith(' ') ? '' : ' '}$ticker ';
+    _textController.value = TextEditingValue(
+      text: text.replaceRange(start, end, insert),
+      selection: TextSelection.collapsed(offset: start + insert.length),
+    );
+    _focusNode.requestFocus();
   }
 
   @override
@@ -313,33 +347,9 @@ class _ChatScreenState extends State<ChatScreen> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _suggestions.map((s) {
-              return InkWell(
-                onTap: () => _sendMessage(s),
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: GamJabiApp.softBlue,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: GamJabiApp.primaryBlue.withValues(alpha: 0.15),
-                    ),
-                  ),
-                  child: Text(
-                    s,
-                    style: const TextStyle(
-                      color: GamJabiApp.primaryBlue,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
+            children: _suggestions
+                .map((s) => _ChipButton(label: s, onTap: () => _sendMessage(s)))
+                .toList(),
           ),
         ],
       ),
@@ -372,7 +382,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       color: GamJabiApp.textMuted,
                       size: 22,
                     ),
-                    onPressed: () {},
+                    tooltip: '보유 종목 넣기',
+                    onPressed: _pickHolding,
                   ),
                   Expanded(
                     child: TextField(
@@ -431,6 +442,99 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Bottom sheet listing the user's holdings; pops with the tapped ticker.
+class _HoldingPicker extends StatelessWidget {
+  const _HoldingPicker();
+
+  @override
+  Widget build(BuildContext context) {
+    // Subscribes, so the list shows up if the watchlist lands while open.
+    final state = AppScope.of(context);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '내 보유 종목',
+              style: TextStyle(
+                color: GamJabiApp.textDark,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              '누르면 입력창에 티커가 들어가요',
+              style: TextStyle(color: GamJabiApp.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: SingleChildScrollView(
+                child: AsyncView<List<WatchlistItem>>(
+                  value: state.watchlist,
+                  isEmpty: (items) => items.isEmpty,
+                  emptyTitle: '등록된 종목이 없어요',
+                  emptyDescription: '등록 탭에서 종목을 추가하면\n여기서 바로 고를 수 있어요.',
+                  onRetry: () => state.refreshWatchlist(force: true),
+                  builder: (context, items) => Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final item in items)
+                        _ChipButton(
+                          label: item.ticker,
+                          onTap: () => Navigator.of(context).pop(item.ticker),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The pill-shaped button used for suggested questions and ticker picks.
+class _ChipButton extends StatelessWidget {
+  const _ChipButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: GamJabiApp.softBlue,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: GamJabiApp.primaryBlue.withValues(alpha: 0.15),
+          ),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: GamJabiApp.primaryBlue,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }
