@@ -28,6 +28,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _tickerController = TextEditingController();
   final _sharesController = TextEditingController();
   final _priceController = TextEditingController();
+  final _searchController = TextEditingController();
+
+  /// Uppercased search text; empty shows every holding.
+  String _query = '';
 
   bool _submitting = false;
   bool _requested = false;
@@ -49,6 +53,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     _tickerController.dispose();
     _sharesController.dispose();
     _priceController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -278,16 +283,23 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   emptyTitle: '등록된 종목이 없어요',
                   emptyDescription: '위 양식에서 티커·수량·평단가를 입력해\n첫 종목을 추가해보세요.',
                   onRetry: () => state.refreshWatchlist(force: true),
-                  builder: (context, items) => Column(
-                    children: items
-                        .map(
-                          (item) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _buildAssetCard(item),
-                          ),
-                        )
-                        .toList(),
-                  ),
+                  builder: (context, items) {
+                    final shown = _matching(items);
+                    return Column(
+                      children: [
+                        _buildSearchField(),
+                        const SizedBox(height: 12),
+                        if (shown.isEmpty)
+                          _buildNoMatch()
+                        else
+                          for (final item in shown)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _buildAssetCard(item),
+                            ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -548,6 +560,62 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Holdings whose ticker contains the search text; all of them when empty.
+  List<WatchlistItem> _matching(List<WatchlistItem> items) {
+    if (_query.isEmpty) return items;
+    return items.where((item) => item.ticker.contains(_query)).toList();
+  }
+
+  Widget _buildSearchField() {
+    return TextField(
+      controller: _searchController,
+      textCapitalization: TextCapitalization.characters,
+      inputFormatters: [UpperCaseFormatter()],
+      onChanged: (value) => setState(() => _query = value.trim().toUpperCase()),
+      style: const TextStyle(
+        color: GamJabiApp.textDark,
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+      ),
+      decoration: _fieldDecoration(label: '종목 검색', hint: '티커 일부 (예: NV)')
+          .copyWith(
+            prefixIcon: const Icon(
+              Icons.search_rounded,
+              color: GamJabiApp.textMuted,
+              size: 20,
+            ),
+            suffixIcon: _searchController.text.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: GamJabiApp.textMuted,
+                      size: 18,
+                    ),
+                    tooltip: '검색어 지우기',
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _query = '');
+                    },
+                  ),
+          ),
+    );
+  }
+
+  Widget _buildNoMatch() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Text(
+        "'$_query' 검색 결과가 없어요",
+        style: const TextStyle(
+          color: GamJabiApp.textMuted,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 
