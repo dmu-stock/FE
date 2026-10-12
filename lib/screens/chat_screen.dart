@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/api_exception.dart';
 import '../main.dart';
 import '../models/chat_message.dart';
 import '../models/watchlist_item.dart';
+import '../services/chat_history_store.dart';
 import '../services/chat_service.dart';
 import '../state/app_scope.dart';
 import '../widgets/async_view.dart';
@@ -34,6 +37,33 @@ class _ChatScreenState extends State<ChatScreen> {
   ];
 
   bool _isTyping = false;
+
+  final _history = ChatHistoryStore();
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_restoreHistory());
+  }
+
+  /// Puts back the chat saved on this device, and its session so the server
+  /// can keep the context if it still remembers it.
+  Future<void> _restoreHistory() async {
+    final saved = await _history.load();
+    // Don't clobber a conversation the user started before storage answered.
+    if (saved == null || !mounted || _messages.length > 1) return;
+    AppScope.read(context).chatSessionId = saved.sessionId;
+    setState(() {
+      _messages
+        ..clear()
+        ..addAll(saved.messages);
+    });
+    _scrollToBottom();
+  }
+
+  void _saveHistory() {
+    unawaited(_history.save(AppScope.read(context).chatSessionId, _messages));
+  }
 
   /// Prompts built from what the user actually holds, falling back to the
   /// blue chips the backend covers when the watchlist is empty.
@@ -118,7 +148,10 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       });
     } finally {
-      if (mounted) setState(() => _isTyping = false);
+      if (mounted) {
+        setState(() => _isTyping = false);
+        _saveHistory();
+      }
       _scrollToBottom();
     }
   }
@@ -134,6 +167,8 @@ class _ChatScreenState extends State<ChatScreen> {
         ChatMessage(sender: Sender.bot, text: '새 대화를 시작합니다. 무엇을 도와드릴까요? 💬'),
       );
     });
+    // Overwrites the stored chat, so the old one doesn't come back on restart.
+    _saveHistory();
   }
 
   /// True once the user has asked something, so there is more to copy than
