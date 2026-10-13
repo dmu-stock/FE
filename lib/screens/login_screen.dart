@@ -90,7 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
           borderRadius: BorderRadius.circular(22),
           boxShadow: [
             BoxShadow(
-              color: GamJabiApp.primaryBlue.withOpacity(0.3),
+              color: GamJabiApp.primaryBlue.withValues(alpha: 0.3),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
@@ -159,16 +159,10 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       child: TextField(
         controller: controller,
-        style: const TextStyle(
-          color: GamJabiApp.textDark,
-          fontSize: 15,
-        ),
+        style: const TextStyle(color: GamJabiApp.textDark, fontSize: 15),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: TextStyle(
-            color: GamJabiApp.textMuted,
-            fontSize: 14,
-          ),
+          hintStyle: TextStyle(color: GamJabiApp.textMuted, fontSize: 14),
           prefixIcon: Icon(icon, color: GamJabiApp.textMuted, size: 20),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 16),
@@ -187,16 +181,10 @@ class _LoginScreenState extends State<LoginScreen> {
       child: TextField(
         controller: _pwController,
         obscureText: _obscurePw,
-        style: const TextStyle(
-          color: GamJabiApp.textDark,
-          fontSize: 15,
-        ),
+        style: const TextStyle(color: GamJabiApp.textDark, fontSize: 15),
         decoration: InputDecoration(
           hintText: '비밀번호 입력',
-          hintStyle: TextStyle(
-            color: GamJabiApp.textMuted,
-            fontSize: 14,
-          ),
+          hintStyle: TextStyle(color: GamJabiApp.textMuted, fontSize: 14),
           prefixIcon: const Icon(
             Icons.lock_outline_rounded,
             color: GamJabiApp.textMuted,
@@ -247,8 +235,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: _rememberMe
-                      ? const Icon(Icons.check_rounded,
-                          size: 14, color: Colors.white)
+                      ? const Icon(
+                          Icons.check_rounded,
+                          size: 14,
+                          color: Colors.white,
+                        )
                       : null,
                 ),
                 const SizedBox(width: 8),
@@ -267,9 +258,7 @@ class _LoginScreenState extends State<LoginScreen> {
         TextButton(
           onPressed: () {
             Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const FindPasswordScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const FindPasswordScreen()),
             );
           },
           style: TextButton.styleFrom(
@@ -304,7 +293,7 @@ class _LoginScreenState extends State<LoginScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          shadowColor: GamJabiApp.primaryBlue.withOpacity(0.4),
+          shadowColor: GamJabiApp.primaryBlue.withValues(alpha: 0.4),
         ),
         child: const Text(
           '로그인',
@@ -333,9 +322,7 @@ class _LoginScreenState extends State<LoginScreen> {
         TextButton(
           onPressed: () {
             Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const SignupAgreementScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const SignupAgreementScreen()),
             );
           },
           style: TextButton.styleFrom(

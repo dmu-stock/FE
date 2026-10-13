@@ -1,6 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../core/api_exception.dart';
 import '../main.dart';
 import '../models/chat_message.dart';
+import '../models/watchlist_item.dart';
+import '../services/chat_history_store.dart';
+import '../services/chat_service.dart';
+import '../state/app_scope.dart';
+import '../widgets/async_view.dart';
+import '../widgets/cold_start_banner.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
 
@@ -19,7 +29,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<ChatMessage> _messages = [
     ChatMessage(
       sender: Sender.bot,
-      text: '안녕하세요! 감자비(GamJabi)입니다 🥔\n'
+      text:
+          '안녕하세요! 감자비(GamJabi)입니다 🥔\n'
           '관심있는 종목이나 시장 분석이 필요하신가요?\n'
           '무엇이든 편하게 물어보세요!',
     ),
@@ -27,12 +38,65 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _isTyping = false;
 
-  final List<String> _suggestions = [
-    '삼성전자 전망 어때?',
-    '오늘 시장 요약해줘',
-    '코스피 분석',
-    '관심종목 추천',
-  ];
+  final _history = ChatHistoryStore();
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_restoreHistory());
+  }
+
+  /// Puts back the chat saved on this device, and its session so the server
+  /// can keep the context if it still remembers it.
+  Future<void> _restoreHistory() async {
+    final saved = await _history.load();
+    // Don't clobber a conversation the user started before storage answered.
+    if (saved == null || !mounted || _messages.length > 1) return;
+    AppScope.read(context).chatSessionId = saved.sessionId;
+    setState(() {
+      _messages
+        ..clear()
+        ..addAll(saved.messages);
+    });
+    _scrollToBottom();
+  }
+
+  void _saveHistory() {
+    unawaited(_history.save(AppScope.read(context).chatSessionId, _messages));
+  }
+
+  /// Prompts built from what the user actually holds, falling back to the
+  /// blue chips the backend covers when the watchlist is empty.
+  List<String> get _suggestions {
+    final holdings = AppScope.of(context).holdings;
+    if (holdings.isEmpty) {
+      return const [
+        'NVDA 전망 어때?',
+        '오늘 미국 시장 요약해줘',
+        '테슬라 최근 뉴스 정리해줘',
+        '애플 지금 사도 될까?',
+      ];
+    }
+    final tickers = holdings.take(3).map((h) => h.ticker).toList();
+    return [
+      '${tickers.first} 전망 어때?',
+      '오늘 미국 시장 요약해줘',
+      if (tickers.length > 1) '${tickers[1]} 최근 뉴스 정리해줘',
+      '내 보유 종목 ${tickers.join(', ')} 중에 뭐가 제일 괜찮아?',
+    ];
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Another screen may have queued a question (e.g. 챗봇에 묻기 on the
+    // analysis sheet). Send it once the tab is actually showing.
+    final queued = AppScope.of(context).takePendingChatMessage();
+    if (queued == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _sendMessage(queued);
+    });
+  }
 
   @override
   void dispose() {
@@ -55,29 +119,108 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _sendMessage(String text) async {
-    if (text.trim().isEmpty) return;
+    final trimmed = text.trim();
+    // Guard against a double tap while a reply is still in flight.
+    if (trimmed.isEmpty || _isTyping) return;
+
+    final state = AppScope.read(context);
 
     setState(() {
-      _messages.add(ChatMessage(sender: Sender.user, text: text.trim()));
+      _messages.add(ChatMessage(sender: Sender.user, text: trimmed));
       _isTyping = true;
     });
     _textController.clear();
     _scrollToBottom();
 
-    await Future.delayed(const Duration(milliseconds: 1200));
+    try {
+      final reply = await ChatService(
+        state.api,
+      ).send(message: trimmed, sessionId: state.chatSessionId);
+      if (!mounted) return;
+      setState(() {
+        _messages.add(ChatMessage(sender: Sender.bot, text: reply));
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          ChatMessage(sender: Sender.bot, text: e.userMessage, isError: true),
+        );
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isTyping = false);
+        _saveHistory();
+      }
+      _scrollToBottom();
+    }
+  }
 
-    if (!mounted) return;
+  void _startNewChat() {
+    // The server keeps conversation memory per session_id, so clearing
+    // only the local list would leave the bot still remembering.
+    AppScope.read(context).startNewChatSession();
     setState(() {
       _isTyping = false;
+      _messages.clear();
       _messages.add(
-        ChatMessage(
-          sender: Sender.bot,
-          text: '"${text.trim()}"에 대한 분석을 준비 중이에요.\n'
-              '곧 예측 모델과 연결될 예정입니다 📈',
-        ),
+        ChatMessage(sender: Sender.bot, text: '새 대화를 시작합니다. 무엇을 도와드릴까요? 💬'),
       );
     });
-    _scrollToBottom();
+    // Overwrites the stored chat, so the old one doesn't come back on restart.
+    _saveHistory();
+  }
+
+  /// True once the user has asked something, so there is more to copy than
+  /// the greeting.
+  bool get _hasConversation => _messages.any((m) => m.sender == Sender.user);
+
+  void _copyConversation() {
+    // Error bubbles are request failures, not part of the conversation.
+    final text = _messages
+        .where((m) => !m.isError)
+        .map((m) => '${m.sender == Sender.user ? '나' : 'GamJabi'}: ${m.text}')
+        .join('\n\n');
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('대화 내용을 복사했어요'),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// Opens the holdings picker and drops the chosen ticker into the input.
+  Future<void> _pickHolding() async {
+    final ticker = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) => const _HoldingPicker(),
+    );
+    if (ticker == null || !mounted) return;
+    _insertTicker(ticker);
+  }
+
+  /// Inserts [ticker] at the cursor, or at the end if the field was never
+  /// focused, adding a space before it when needed and one after it.
+  void _insertTicker(String ticker) {
+    final value = _textController.value;
+    final text = value.text;
+    final selection = value.selection;
+    final start = selection.isValid ? selection.start : text.length;
+    final end = selection.isValid ? selection.end : text.length;
+    final before = text.substring(0, start);
+    final insert =
+        '${before.isEmpty || before.endsWith(' ') ? '' : ' '}$ticker ';
+    _textController.value = TextEditingValue(
+      text: text.replaceRange(start, end, insert),
+      selection: TextSelection.collapsed(offset: start + insert.length),
+    );
+    _focusNode.requestFocus();
   }
 
   @override
@@ -101,6 +244,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             if (_messages.length <= 1) _buildSuggestions(),
+            const ColdStartBanner(),
             _buildInputBar(),
           ],
         ),
@@ -131,7 +275,7 @@ class _ChatScreenState extends State<ChatScreen> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: GamJabiApp.primaryBlue.withOpacity(0.3),
+                  color: GamJabiApp.primaryBlue.withValues(alpha: 0.3),
                   blurRadius: 10,
                   offset: const Offset(0, 3),
                 ),
@@ -184,24 +328,34 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.refresh_rounded,
-              color: GamJabiApp.textDark, size: 22),
-          onPressed: () {
-            setState(() {
-              _messages.clear();
-              _messages.add(
-                ChatMessage(
-                  sender: Sender.bot,
-                  text: '새 대화를 시작합니다. 무엇을 도와드릴까요? 💬',
-                ),
-              );
-            });
-          },
+          icon: const Icon(
+            Icons.refresh_rounded,
+            color: GamJabiApp.textDark,
+            size: 22,
+          ),
+          onPressed: _startNewChat,
         ),
-        IconButton(
-          icon: const Icon(Icons.more_vert_rounded,
-              color: GamJabiApp.textDark, size: 22),
-          onPressed: () {},
+        PopupMenuButton<String>(
+          icon: const Icon(
+            Icons.more_vert_rounded,
+            color: GamJabiApp.textDark,
+            size: 22,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          onSelected: (value) {
+            if (value == 'copy') _copyConversation();
+            if (value == 'new') _startNewChat();
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'copy',
+              enabled: _hasConversation,
+              child: const Text('대화 내용 복사'),
+            ),
+            const PopupMenuItem(value: 'new', child: Text('새 대화 시작')),
+          ],
         ),
         const SizedBox(width: 4),
       ],
@@ -228,31 +382,9 @@ class _ChatScreenState extends State<ChatScreen> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _suggestions.map((s) {
-              return InkWell(
-                onTap: () => _sendMessage(s),
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: GamJabiApp.softBlue,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: GamJabiApp.primaryBlue.withOpacity(0.15),
-                    ),
-                  ),
-                  child: Text(
-                    s,
-                    style: const TextStyle(
-                      color: GamJabiApp.primaryBlue,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
+            children: _suggestions
+                .map((s) => _ChipButton(label: s, onTap: () => _sendMessage(s)))
+                .toList(),
           ),
         ],
       ),
@@ -264,9 +396,7 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Color(0xFFEEF1F7), width: 1),
-        ),
+        border: Border(top: BorderSide(color: Color(0xFFEEF1F7), width: 1)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -287,7 +417,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       color: GamJabiApp.textMuted,
                       size: 22,
                     ),
-                    onPressed: () {},
+                    tooltip: '보유 종목 넣기',
+                    onPressed: _pickHolding,
                   ),
                   Expanded(
                     child: TextField(
@@ -332,7 +463,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: GamJabiApp.primaryBlue.withOpacity(0.3),
+                    color: GamJabiApp.primaryBlue.withValues(alpha: 0.3),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -346,6 +477,99 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Bottom sheet listing the user's holdings; pops with the tapped ticker.
+class _HoldingPicker extends StatelessWidget {
+  const _HoldingPicker();
+
+  @override
+  Widget build(BuildContext context) {
+    // Subscribes, so the list shows up if the watchlist lands while open.
+    final state = AppScope.of(context);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '내 보유 종목',
+              style: TextStyle(
+                color: GamJabiApp.textDark,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              '누르면 입력창에 티커가 들어가요',
+              style: TextStyle(color: GamJabiApp.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: SingleChildScrollView(
+                child: AsyncView<List<WatchlistItem>>(
+                  value: state.watchlist,
+                  isEmpty: (items) => items.isEmpty,
+                  emptyTitle: '등록된 종목이 없어요',
+                  emptyDescription: '등록 탭에서 종목을 추가하면\n여기서 바로 고를 수 있어요.',
+                  onRetry: () => state.refreshWatchlist(force: true),
+                  builder: (context, items) => Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final item in items)
+                        _ChipButton(
+                          label: item.ticker,
+                          onTap: () => Navigator.of(context).pop(item.ticker),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The pill-shaped button used for suggested questions and ticker picks.
+class _ChipButton extends StatelessWidget {
+  const _ChipButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: GamJabiApp.softBlue,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: GamJabiApp.primaryBlue.withValues(alpha: 0.15),
+          ),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: GamJabiApp.primaryBlue,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }

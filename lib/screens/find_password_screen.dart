@@ -58,10 +58,8 @@ class _FindPasswordScreenState extends State<FindPasswordScreen> {
         : _phoneController.text.trim();
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => VerifyCodeScreen(
-          destination: destination,
-          method: _method,
-        ),
+        builder: (_) =>
+            VerifyCodeScreen(destination: destination, method: _method),
       ),
     );
   }
@@ -235,7 +233,7 @@ class _FindPasswordScreenState extends State<FindPasswordScreen> {
           boxShadow: selected
               ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -254,9 +252,7 @@ class _FindPasswordScreenState extends State<FindPasswordScreen> {
             Text(
               label,
               style: TextStyle(
-                color: selected
-                    ? GamJabiApp.primaryBlue
-                    : GamJabiApp.textMuted,
+                color: selected ? GamJabiApp.primaryBlue : GamJabiApp.textMuted,
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
               ),
@@ -297,24 +293,19 @@ class _FindPasswordScreenState extends State<FindPasswordScreen> {
           ),
           child: TextField(
             controller: isEmail ? _emailController : _phoneController,
-            keyboardType:
-                isEmail ? TextInputType.emailAddress : TextInputType.phone,
+            keyboardType: isEmail
+                ? TextInputType.emailAddress
+                : TextInputType.phone,
             inputFormatters: isEmail
                 ? null
                 : [
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(11),
                   ],
-            style: const TextStyle(
-              color: GamJabiApp.textDark,
-              fontSize: 15,
-            ),
+            style: const TextStyle(color: GamJabiApp.textDark, fontSize: 15),
             decoration: InputDecoration(
               hintText: isEmail ? 'example@gamjabi.com' : '01012345678',
-              hintStyle: TextStyle(
-                color: GamJabiApp.textMuted,
-                fontSize: 14,
-              ),
+              hintStyle: TextStyle(color: GamJabiApp.textMuted, fontSize: 14),
               prefixIcon: Icon(
                 isEmail
                     ? Icons.mail_outline_rounded
@@ -351,7 +342,7 @@ class _FindPasswordScreenState extends State<FindPasswordScreen> {
             child: Text(
               '가입 시 입력한 정보가 기억나지 않으면\n고객센터로 문의해주세요.',
               style: TextStyle(
-                color: GamJabiApp.primaryBlue.withOpacity(0.9),
+                color: GamJabiApp.primaryBlue.withValues(alpha: 0.9),
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
                 height: 1.5,

@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for the GamJabi API calls. The debug/profile manifests declare this
+         automatically, so without it release builds fail every request at runtime. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="gamjabi"
         android:name="${applicationName}"

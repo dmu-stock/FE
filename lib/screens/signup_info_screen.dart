@@ -173,8 +173,7 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
         content: Text(msg),
         backgroundColor: GamJabiApp.primaryBlue,
         behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
         duration: const Duration(seconds: 2),
       ),
@@ -189,8 +188,8 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
       _pwError = _pwController.text.length < 8
           ? '비밀번호는 8자 이상이어야 해요'
           : (!_specialRegex.hasMatch(_pwController.text)
-              ? '특수문자를 하나 이상 포함해주세요'
-              : null);
+                ? '특수문자를 하나 이상 포함해주세요'
+                : null);
       _pwConfirmError = _pwController.text != _pwConfirmController.text
           ? '비밀번호가 일치하지 않아요'
           : null;
@@ -210,8 +209,7 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
 
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) =>
-            SignupCompleteScreen(name: _nameController.text.trim()),
+        builder: (_) => SignupCompleteScreen(name: _nameController.text.trim()),
       ),
     );
   }
@@ -262,7 +260,8 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
                       controller: _pwConfirmController,
                       obscure: _obscurePwConfirm,
                       onToggle: () => setState(
-                          () => _obscurePwConfirm = !_obscurePwConfirm),
+                        () => _obscurePwConfirm = !_obscurePwConfirm,
+                      ),
                       errorText: _pwConfirmError,
                     ),
                     const SizedBox(height: 16),
@@ -331,8 +330,7 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
   }
 
   Widget _buildEmailSection() {
-    final emailFormatOk =
-        _emailRegex.hasMatch(_emailController.text.trim());
+    final emailFormatOk = _emailRegex.hasMatch(_emailController.text.trim());
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -362,7 +360,8 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
             secondsLeft: _emailSecondsLeft,
             suffix: _inlineActionButton(
               label: '확인',
-              enabled: _emailCodeController.text.length == 6 &&
+              enabled:
+                  _emailCodeController.text.length == 6 &&
                   _emailSecondsLeft > 0,
               onTap: _verifyEmailCode,
             ),
@@ -374,8 +373,7 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
   }
 
   Widget _buildPhoneSection() {
-    final phoneFormatOk =
-        _phoneRegex.hasMatch(_phoneController.text.trim());
+    final phoneFormatOk = _phoneRegex.hasMatch(_phoneController.text.trim());
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -409,7 +407,8 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
             secondsLeft: _phoneSecondsLeft,
             suffix: _inlineActionButton(
               label: '확인',
-              enabled: _phoneCodeController.text.length == 6 &&
+              enabled:
+                  _phoneCodeController.text.length == 6 &&
                   _phoneSecondsLeft > 0,
               onTap: _verifyPhoneCode,
             ),
@@ -444,8 +443,11 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: const [
-                  Icon(Icons.check_circle_rounded,
-                      size: 12, color: GamJabiApp.primaryBlue),
+                  Icon(
+                    Icons.check_circle_rounded,
+                    size: 12,
+                    color: GamJabiApp.primaryBlue,
+                  ),
                   SizedBox(width: 3),
                   Text(
                     '인증 완료',
@@ -479,8 +481,7 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
         color: enabled ? Colors.white : const Color(0xFFF4F6FB),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color:
-              hasError ? const Color(0xFFE53935) : const Color(0xFFE4E9F2),
+          color: hasError ? const Color(0xFFE53935) : const Color(0xFFE4E9F2),
         ),
       ),
       child: Row(
@@ -493,27 +494,20 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
               enabled: enabled,
               keyboardType: keyboardType,
               inputFormatters: inputFormatters,
-              style: const TextStyle(
-                color: GamJabiApp.textDark,
-                fontSize: 15,
-              ),
+              style: const TextStyle(color: GamJabiApp.textDark, fontSize: 15),
               decoration: InputDecoration(
                 hintText: hint,
-                hintStyle: TextStyle(
-                  color: GamJabiApp.textMuted,
-                  fontSize: 14,
-                ),
+                hintStyle: TextStyle(color: GamJabiApp.textMuted, fontSize: 14),
                 border: InputBorder.none,
-                contentPadding:
-                    const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                contentPadding: const EdgeInsets.symmetric(
+                  vertical: 16,
+                  horizontal: 8,
+                ),
               ),
             ),
           ),
           if (suffix != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: suffix,
-            ),
+            Padding(padding: const EdgeInsets.only(right: 6), child: suffix),
         ],
       ),
     );
@@ -532,8 +526,7 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           decoration: BoxDecoration(
-            color:
-                enabled ? GamJabiApp.primaryBlue : const Color(0xFFCED4DE),
+            color: enabled ? GamJabiApp.primaryBlue : const Color(0xFFCED4DE),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
@@ -563,8 +556,8 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: expired
-              ? const Color(0xFFE53935).withOpacity(0.4)
-              : GamJabiApp.primaryBlue.withOpacity(0.25),
+              ? const Color(0xFFE53935).withValues(alpha: 0.4)
+              : GamJabiApp.primaryBlue.withValues(alpha: 0.25),
         ),
       ),
       child: Row(
@@ -600,7 +593,9 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
                 ),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(
-                    vertical: 16, horizontal: 8),
+                  vertical: 16,
+                  horizontal: 8,
+                ),
               ),
             ),
           ),
@@ -618,10 +613,7 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
             ),
           ),
           if (suffix != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: suffix,
-            ),
+            Padding(padding: const EdgeInsets.only(right: 6), child: suffix),
         ],
       ),
     );
@@ -693,16 +685,10 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
           child: TextField(
             controller: controller,
             obscureText: obscure,
-            style: const TextStyle(
-              color: GamJabiApp.textDark,
-              fontSize: 15,
-            ),
+            style: const TextStyle(color: GamJabiApp.textDark, fontSize: 15),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: TextStyle(
-                color: GamJabiApp.textMuted,
-                fontSize: 14,
-              ),
+              hintStyle: TextStyle(color: GamJabiApp.textMuted, fontSize: 14),
               prefixIcon: const Icon(
                 Icons.lock_outline_rounded,
                 color: GamJabiApp.textMuted,
@@ -731,10 +717,7 @@ class _SignupInfoScreenState extends State<SignupInfoScreen> {
   Widget _buildPasswordHint() {
     final hints = [
       _HintItem('8자 이상', _pwController.text.length >= 8),
-      _HintItem(
-        '특수문자 1개 이상 포함',
-        _specialRegex.hasMatch(_pwController.text),
-      ),
+      _HintItem('특수문자 1개 이상 포함', _specialRegex.hasMatch(_pwController.text)),
       _HintItem(
         '비밀번호 일치',
         _pwController.text.isNotEmpty &&

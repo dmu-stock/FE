@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../main.dart';
+import '../state/app_scope.dart';
 import 'chat_screen.dart';
+import 'analysis_screen.dart';
 import 'home_screen.dart';
-import 'placeholder_screen.dart';
+import 'news_screen.dart';
 import 'registration_screen.dart';
 
 class MainScaffold extends StatefulWidget {
@@ -17,22 +19,23 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   List<Widget> get _pages => [
     HomeScreen(onRegisterTap: () => setState(() => _currentIndex = 4)),
-    const PlaceholderScreen(
-      title: '뉴스',
-      icon: Icons.article_rounded,
-      description: '관심 종목과 시장 소식을 한눈에 모아볼 수 있어요.',
-    ),
-    const PlaceholderScreen(
-      title: '분석',
-      icon: Icons.insights_rounded,
-      description: '예측 모델 기반 종목 분석을 곧 제공합니다.',
-    ),
+    const NewsScreen(),
+    const AnalysisScreen(),
     const ChatScreen(),
     const RegistrationScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
+    // Other screens hand off a tab jump through AppState (e.g. the analysis
+    // sheet sending a ticker to the chat bot).
+    final requested = AppScope.of(context).takeRequestedTab();
+    if (requested != null && requested != _currentIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _currentIndex = requested);
+      });
+    }
+
     return Scaffold(
       body: IndexedStack(index: _currentIndex, children: _pages),
       bottomNavigationBar: _buildBottomNav(),

@@ -23,10 +23,7 @@ class _SignupCompleteScreenState extends State<SignupCompleteScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    _scale = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.elasticOut,
-    );
+    _scale = CurvedAnimation(parent: _controller, curve: Curves.elasticOut);
     _controller.forward();
   }
 
@@ -66,7 +63,9 @@ class _SignupCompleteScreenState extends State<SignupCompleteScreen>
                             borderRadius: BorderRadius.circular(32),
                             boxShadow: [
                               BoxShadow(
-                                color: GamJabiApp.primaryBlue.withOpacity(0.35),
+                                color: GamJabiApp.primaryBlue.withValues(
+                                  alpha: 0.35,
+                                ),
                                 blurRadius: 20,
                                 offset: const Offset(0, 8),
                               ),
@@ -128,8 +127,7 @@ class _SignupCompleteScreenState extends State<SignupCompleteScreen>
           const SizedBox(height: 12),
           _buildInfoRow(Icons.chat_bubble_rounded, '24시간 챗봇 투자 상담'),
           const SizedBox(height: 12),
-          _buildInfoRow(Icons.notifications_active_rounded,
-              '관심 종목 실시간 알림'),
+          _buildInfoRow(Icons.notifications_active_rounded, '관심 종목 실시간 알림'),
         ],
       ),
     );
